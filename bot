@@ -1,0 +1,175 @@
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActivityType, PermissionFlagsBits } = require('discord.js');
+const { token, clientId, guildId } = require('./config.json');
+const fs = require('fs');
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+
+let usersData = {};
+const dataFilePath = 'usersData.json';
+
+
+const loadUserData = () => {
+    if (fs.existsSync(dataFilePath)) {
+        try {
+            usersData = JSON.parse(fs.readFileSync(dataFilePath, 'utf-8'));
+        } catch (error) {
+            console.error('Error loading user data:', error);
+            usersData = {};
+        }
+    }
+};
+
+const saveUserData = () => {
+    fs.writeFileSync(dataFilePath, JSON.stringify(usersData, null, 2));
+};
+
+loadUserData();
+
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+    client.user.setActivity('over Avianca | PTFS', { type: ActivityType.Watching });
+
+    
+    setInterval(saveUserData, 5 * 60 * 1000); // every 5 minutes
+});
+
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    const { commandName, options, member } = interaction;
+
+    if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    }
+
+    if (commandName === 'addmiles') {
+        const user = options.getUser('user');
+        const miles = options.getInteger('miles');
+
+        if (!usersData[user.id]) {
+            usersData[user.id] = { miles: 0 };
+        }
+        usersData[user.id].miles += miles;
+
+        saveUserData();
+
+        const embed = new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle('LifeMiles Added')
+            .setDescription(`${miles} LifeMiles have been added to ${user.tag}'s account.`)
+            .addFields({ name: 'Total LifeMiles', value: `${usersData[user.id].miles}`, inline: true })
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+    } else if (commandName === 'checkaccount') {
+        const user = options.getUser('user');
+
+        const miles = usersData[user.id] ? usersData[user.id].miles : 0;
+
+        const embed = new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle('Account Balance')
+            .setDescription(`${user.tag} has ${miles} LifeMiles.`)
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+    } else if (commandName === 'acceptcareer') {
+        const user = options.getUser('user');
+        const position = options.getString('position');
+
+        const embed = new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle('Career Acceptance Letter')
+            .setDescription(`Congratulations ${user.tag}, you have been accepted for the position of ${position} at Avianca! Please join https://discord.gg/BBnja3waac.
+               
+                A online staff member will ping you to get started.
+                
+                Thanks and regards,
+                Avianca Team`)
+            .setTimestamp();
+
+        try {
+            await user.send({ embeds: [embed] });
+            await interaction.reply({ content: `Acceptance letter sent to ${user.tag} via DM.`, ephemeral: true });
+        } catch (error) {
+            await interaction.reply({ content: `Failed to send DM to ${user.tag}.`, ephemeral: true });
+        }
+    }
+});
+
+client.login(token);
+
+const commands = [
+    {
+        name: 'addmiles',
+        description: 'Add LifeMiles to a user\'s account',
+        options: [
+            {
+                name: 'user',
+                type: 6,
+                description: 'The user to add miles to',
+                required: true,
+            },
+            {
+                name: 'miles',
+                type: 4,
+                description: 'The number of miles to add',
+                required: true,
+            }
+        ],
+    },
+    {
+        name: 'checkaccount',
+        description: 'Check a user\'s LifeMiles balance',
+        options: [
+            {
+                name: 'user',
+                type: 6,
+                description: 'The user to check',
+                required: true,
+            }
+        ],
+    },
+    {
+        name: 'acceptcareer',
+        description: 'Send a career acceptance letter to a user',
+        options: [
+            {
+                name: 'user',
+                type: 6,
+                description: 'The user to send the acceptance letter to',
+                required: true,
+            },
+            {
+                name: 'position',
+                type: 3,
+                description: 'The career position',
+                required: true,
+                choices: [
+                    { name: 'Cadet Pilot', value: 'Cadet Pilot' },
+                    { name: 'Direct Entry First Officer', value: 'Direct Entry First Officer' },
+                    { name: 'Captain', value: 'Captain' },
+                    { name: 'Cabin Crew', value: 'Cabin Crew' },
+                    { name: 'Ground Crew', value: 'Ground Crew' },
+                ]
+            }
+        ],
+    }
+];
+
+const rest = new REST({ version: '10' }).setToken(token);
+
+(async () => {
+    try {
+        console.log('Started refreshing application (/) commands.');
+
+        await rest.put(
+            Routes.applicationGuildCommands(clientId, guildId),
+            { body: commands },
+        );
+
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error(error);
+    }
+})();
